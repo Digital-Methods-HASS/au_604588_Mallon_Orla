@@ -1,0 +1,368 @@
+---
+title: "CDS Final Project"
+author: "Orla Mallon"
+date: "19/12/2020"
+output: html_document
+---
+This R-Markdown contains the code used to conduct the musical analysis between 2 psychedelic compounds Ayahuasca and LSD.It consists of 3 parts: 
+1. Data Preprocessing 
+2. Explortory data visualisations 
+3. Building 2 classifiers to test how well musical features can differentiate tracks between the two psychedelic cultures. 
+
+The script setup: 
+```{r setup, include=FALSE}
+#Check the Working Directory 
+getwd()
+
+#Load in the data 
+CDS_data <- Data_for_CDS
+
+#Attach the repository URL 
+#https://github.com/Digital-Methods-HASS/au_604588_Mallon_Orla
+
+```
+
+## Data Preprocessing 
+i) Filter the data to include only tracks from LSD or Ayahuasca 
+ii) Calculate a within compound weighted index 
+iii) Remove duplicates within coumpound groups 
+iv) Select the top 7000 tracks from each drug group 
+v) Merge the dataframes back into one to start the analysis 
+
+
+```{r Data Preprocessing }
+#Packages needed 
+install.packages("dplyr", "tidyverse", "pacman")
+library(dplyr)
+library(tidyverse)
+library(pacman)
+
+#Step One: Filter the data
+#The data has already been grouped into Drugs from the keyword searches (column = "Drug") so we can subset using this column
+data_Ayahuasca  <- CDS_data %>% subset(Drug == "Ayahuasca")
+data_LSD <- CDS_data %>% subset(Drug == "LSD")
+
+#Step Two: Calculate the within Drug Weighted Index (TF-IDF equation)
+#i) create a drug duplicates column, ii) Calculate new TF term, iii) calculate the new index 
+data_Ayahuasca <- data_Ayahuasca %>% group_by(TrackName, Artists) %>% mutate(Drug_Dups = n()) #i 
+data_Ayahuasca <- data_Ayahuasca %>% group_by(TrackName, Artists) %>% mutate(Drug_TF = sum(FollowCount / NumOfTracks)) # ii 
+data_Ayahuasca <- data_Ayahuasca %>% mutate(Drug_Index = Drug_TF *log10(1 + Inverse)) # iii 
+
+data_LSD <- data_LSD %>% group_by(TrackName, Artists) %>% mutate(Drug_Dups = n()) #i
+data_LSD <- data_LSD %>% group_by(TrackName, Artists) %>% mutate(Drug_TF = sum(FollowCount / NumOfTracks))#ii
+data_LSD <- data_LSD %>% mutate(Drug_Index = Drug_TF *log10(1 + Inverse)) #iii
+
+#Now we have our ayahuasca data in a data frame with a column for duplicates within compound (Drug_Dups), a column for within compound TF (Drug_TF), and a new within compound index (Drug_Index)
+
+#Step Three: Remove the duplicates within the compound groups 
+data_LSD <- data_LSD %>% distinct(TrackName, Artists, .keep_all = TRUE) #removes 9575 tracks (23%)
+data_Ayahuasca <- data_Ayahuasca %>% distinct(TrackName, Artists, .keep_all = TRUE) #removes 7743 tracks (52%)
+
+#Step Four: Select the top 7000 tracks from each compound group, ranked by new Drug_index weight 
+top_7k_LSD <- as.data.frame(data_LSD) %>% slice_max(Drug_Index, n = 7000, with_ties = F)
+top_7k_Aya <- as.data.frame(data_Ayahuasca) %>% slice_max(Drug_Index, n = 7000, with_ties = F)
+
+#Step Five: Merge the dataframes back together to start the data analysis 
+CDS_data <- rbind.data.frame(top_7k_Aya, top_7k_LSD) #We now have a dataframe with 14,000 tracks 
+
+```
+
+## Part One: Exploratory Data visualisation 
+
+Exploratory data analysis was conducted to compare the two compounds.This took the form of: 
+i) Checking the correlations 
+ii) Boxplots 
+iii) Density histograms 
+iv) Checking the significance of differences using t-tests 
+v) Scatter plots of interesting variables to see if the differences can be seen
+```{r Data Analysis}
+#Packages needed: 
+install.packages("ggplot2", "funModeling")
+library(ggplot2)
+library(funModeling)
+
+#Getting our data into numerical form 
+#Make a numerical dataframe with the musical features - including within each drug grounp
+CDS_numerical <- CDS_data %>% select(c(Drug, acousticness, danceability, energy, instrumentalness, liveness, loudness, speechiness, tempo, valence))
+
+Ayahuasca_numerical <- top_7k_Aya %>% select(c(Drug, acousticness, danceability, energy, instrumentalness, liveness, loudness, speechiness, tempo, valence))
+
+LSD_numerical <- top_7k_LSD %>% select(c(Drug, acousticness, danceability, energy, instrumentalness, liveness, loudness, speechiness, tempo, valence))
+
+#Make the drug column into a factor to allow numerical plotting 
+CDS_numerical$Drug <- as.factor(CDS_numerical$Drug)
+Ayahuasca_numerical$Drug <- as.factor(Ayahuasca_numerical$Drug)
+LSD_numerical$Drug <- as.factor(LSD_numerical$Drug)
+
+#Step One: Correlations 
+#Check the correlations among the variables using corrplot() function 
+library(corrplot)
+correlations <- cor(CDS_numerical[,2:9]) #Make a variable excluding drug to compare the musical features
+corrplot(correlations, method="circle")
+
+##Results: Acousticness has strong negative correlation with danceability, energy, and loudness. 
+#Loudness has strong positive correlation with danceability and energy
+#Danceability has a moderately strong positive correlation with energy
+
+#Step Two: Boxplots 
+#Use the funModeling package and function plotar() to make boxplots of all the musical variables: 
+plotar(data=CDS_numerical, target="Drug", plot_type="boxplot")
+
+## Results: Big differences seen in acousticness, energy and instrumentalness
+#Moderate differences seen in danceability, loudness, tempo and valence 
+#Minimal differences seen in liveness and speechiness 
+
+#Step 3: Density Histograms  
+#Use the funModeling package and function plotar()to make density histograms to compare the distribution of variables 
+plotar(data=CDS_numerical, target="Drug", plot_type="histdens")
+
+##Results: Danceability and tempo have somewhat normal and similar distributions between the compound groups
+#Acousticness, energy and instrumentalness show huge variation in means and distribution 
+#Valence shows similar but highly left skewed distribution for both groups (skew = 0.56, kurt = 2.32)
+#Liveness has a highly left skewed but similar distribution (skew = 2.35, kurt = 8.91) for both compounds while loudness has a highly right skewed but similar (skew = -1.27, kurt = 5.20) distribion for both compounds. 
+
+
+#Step 4: Getting the descriptive statistics and significance of differences between each compound  
+profiling_num(CDS_numerical) #Stats of both groups together (overall subset stats)
+profiling_num(Ayahuasca_numerical) #Ayahuasca means, sd's, skew and kurtosis 
+profiling_num(LSD_numerical) #LSD means, sd's, skew and kurtosis 
+
+#Run independant t-tests between the two groups to compare whether the differences are statistically significant (or whether they just emerged by chance). Our point of significance is p < .05
+
+#Significance T-tests 
+t.test(CDS_numerical$acousticness ~ CDS_numerical$Drug, var.equal = TRUE) #Acousticness:t = 97.8, p < .05
+t.test(CDS_numerical$danceability ~ CDS_numerical$Drug, var.equal = TRUE) #Danceability: t = -42.2, p < .05
+t.test(CDS_numerical$energy ~ CDS_numerical$Drug, var.equal = TRUE) #Energy: t = -89.4, p < .05
+t.test(CDS_numerical$instrumentalness ~ CDS_numerical$Drug, var.equal = TRUE) #Instru: t = -21.9, p < .05
+t.test(CDS_numerical$liveness ~ CDS_numerical$Drug, var.equal = TRUE) #Live: t = -11.1, p < .05
+t.test(CDS_numerical$loudness ~ CDS_numerical$Drug, var.equal = TRUE) #Loud: t = -65.7, p < .05 
+t.test(CDS_numerical$speechiness ~ CDS_numerical$Drug, var.equal = TRUE) #Speech: t = -19.4, p < .05
+t.test(CDS_numerical$tempo ~ CDS_numerical$Drug, var.equal = TRUE) #Tempo : t = -25.98, p < .05
+t.test(CDS_numerical$valence ~ CDS_numerical$Drug, var.equal = TRUE) #Valence: t = -15.8, p < .05
+
+##Results are all summarised in Table X of the final project write up
+
+#Step 5: Scatter Plots
+#Scatter 1: Acousticness and energy are highly correlated, with big differences between the two means. Let's plot a scatter plot to observe the relationship in these 2 variables between the compound groups: 
+ggplot(CDS_numerical, aes(x = acousticness, y = energy)) + 
+  geom_point(aes(colour = Drug, alpha=0.01)) +
+  scale_color_manual(values = c("#CA3C97", "#EDD9A3")) +
+  theme_bw() +
+    theme(
+      plot.title = element_text(size=12)
+    ) + theme(panel.border = element_blank()) + 
+  labs(x = "Acousticness", y = "Energy", title = "Scatterplot of Acousticness and Energy between Compound Groups") +
+    theme(axis.text.x = element_text(face = 'bold', size = 8),
+        axis.text.y = element_text(face = 'bold', size = 8))
+
+#Comments: Here the difference between the compound groups is clearly visable, the LSD tracks cluster around the higher end of energy with low acousticness, while the Ayahuasca tracks cluster at the higher end of acousticness and lower end of energy
+
+#Scatter 2: Valence and Danceability show smaller but still significant differences between the two means. We'll also visualise these using a scatterplot: 
+ggplot(CDS_numerical, aes(x = danceability, y = instrumentalness)) + 
+  geom_point(aes(colour = Drug, alpha=0.01)) +
+  scale_color_manual(values = c("#CA3C97", "#EDD9A3")) +
+  theme_bw() +
+    theme(
+      plot.title = element_text(size=12)
+    ) + theme(panel.border = element_blank()) + 
+  labs(x = "Valence", y = "Danceability", title = "Scatterplot of Valence and Danceability between Compound Groups") +
+    theme(axis.text.x = element_text(face = 'bold', size = 8),
+        axis.text.y = element_text(face = 'bold', size = 8))
+
+#Comments: The differences here are less visable but we still see distinct clusters of LSD tracks at the higher end of both valence and danceability, and Ayahuasca being spread much more with many tracks clustering at the high end of danceability but lower end of valence. 
+
+```
+It's clear to see that musical differences exist between the two groups, but we want to go beyond the significance testing and see how well a classifier will be able to distinguish between the two groups based only on their musical features. Typical classifiers are considered to be good if they can achieve an accuracy above 70%. The higher the accuracy, the more the variables are able to digtinguish or explain the two groups. In this context, the classifier will be telling us how well the musical features define each compound group, and thus the musical choice of the culture behind the compound. The higer the accuracy, the more confidence we can hae in inferring why the musical features may distrubute as they do between the two cultures. Let's jump in! 
+
+## Part Two: Building a Classifier
+Two approaches will be used to build a classifier, and the accuracy of each will be compared: 
+i) Binomial Logistic Regression Classification 
+ii) Random Forest Classification 
+
+EXPLAIN EACH 
+
+The Binomial Logistic Regression Classifier: 
+```{r  Binomial Logistic Regression}
+set.seed(999) #this allows for replication 
+
+#The logistic regression classifier cannot handle all 9 musical variables and so the 5 with the greatest variance between groups were chosen as predictors. These were: acousticness, energy, instrumentalness, danceability, and tempo
+
+#The data 
+BLR_Data <- CDS_numerical %>% select(c(acousticness, energy,  instrumentalness, danceability, tempo, Drug))
+BLR_Data$Drug <- as.factor(BLR_Data$Drug)
+
+#The functions
+#createDataPartition() - splits data into train and test sets based on our target (Drug)
+#glm() - this is one of the most versatile of models to use for logistic reg in R 
+
+# Loading caret library - this supports the splitting of data 
+require(caret) 
+
+# Splitting the data into train (70%) and test (30%) sets 
+BLR_Model_index <- createDataPartition(BLR_Data$Drug, p = .70, list = FALSE)
+BLR_Model_train <- BLR_Data[BLR_Model_index, ]
+BLR_Model_test <- BLR_Data[-BLR_Model_index, ]
+
+# Training the model - AIC = 8242 
+BLR_Model <- glm(Drug ~ ., family = binomial(), data = BLR_Model_train)
+# Checking the model
+summary(BLR_Model) #There is a big difference between the Null (13586) and Residual (8230) deviance, indicating that our predictors are infact telling us more than a null model 
+
+#Convert the Coefficients to odds - to make them more interpretable 
+exp(coef(BLR_Model))
+
+# Creating predictions in the test dataset
+pred_BLR <- predict(BLR_Model, BLR_Model_test, type = "response")
+
+#Classification Table - First Training set and then test 
+# Converting from probability to actual output
+BLR_Model_train$pred_drug <- ifelse(BLR_Model$fitted.values >= 0.5, "LSD", "Ayahuasca")
+# Generating the classification table
+ctab_train <- table(BLR_Model_train$Drug, BLR_Model_train$pred_drug)
+ctab_train
+
+# Converting from probability to actual output
+BLR_Model_test$pred_drug <- ifelse(pred_BLR >= 0.5, "LSD", "Ayahuasca")
+# Generating the classification table
+ctab_test <- table(BLR_Model_test$Drug, BLR_Model_test$pred_drug)
+ctab_test
+
+#Accuracy = (TP + TN)/(TN + FP + FN + TP)
+#Train
+accuracy_train <- sum(diag(ctab_train))/sum(ctab_train)*100
+accuracy_train   # Accuracy in Training dataset - is 81.5% (81.46)
+
+# Test
+accuracy_test <- sum(diag(ctab_test))/sum(ctab_test)*100
+accuracy_test   #Accuracy in Test dataset = Also 80.3%% (80.28)
+
+#The accuracy's are close indicating that our models are performing well! We are performing at a rate of around 30% above chance 
+
+#Let's explore the True Positive rate (TPR) (ie the Sensitivity)
+# Recall or TPR indicates how often does our model predicts actual TRUE from the overall TRUE events.
+Recall_TR <- (ctab_train[2, 2]/sum(ctab_train[2, ]))*100
+Recall_TR   #Answer: Recall in Train dataset - This is 83.0% 
+
+# True Negative Rate(TRN) in Train dataset
+#TNR indicates how often does our model predicts actual nonevents from the overall nonevents
+TNR <- (ctab_train[1, 1]/sum(ctab_train[1, ]))*100
+TNR   #Answer: This happens 79.9% of the time 
+
+# Precision in Train dataset (i.e. how often does the model predict the drug when the drug is actually correct)
+Precision <- (ctab_train[2, 2]/sum(ctab_train[, 2]))*100
+Precision   #Answer: This happens 80.5% of the time 
+
+#Calculating the F-Score - F-Score is a harmonic mean of recall and precision. The score value lies between 0 and 1. The value of 1 represents perfect precision & recall. The value 0 represents the worst case.
+F_Score <- (2 * Precision * Recall_TR / (Precision + Recall_TR))/100
+F_Score #This is 0.82 which is pretty good! 
+
+#Calculating the AUC value and ROC curve - this gives us an indication of how good our model is 
+library(pROC)
+roc_BLR <- roc(BLR_Model_train$Drug, BLR_Model$fitted.values)
+auc(roc_BLR) #The area under the curve is .89 which is pretty dam good! (value runs between 0 to 1 and the closer to 1 the better the model)
+plot(roc_BLR) #This plots our roc values
+
+
+
+```
+Conclusion: Our Binary Logistic Regression model can predict which compund group a track belongs to with an accuracy around 80% using the musical features of acousticness, energy, instrumentalness, tempo and valence. This is 30% above chance level (50%). Our train and test sets show similar accuracy indicating that the model is not over-fitting and our statistical tests of model evaluation indicate that the classifier has good levels of sensitivity, specificity and auc. This is promising and supports that musical differences exist which are string enough to perhaps tell us something more about the culure they belong to. 
+
+Random Forest Classifier: This classifier is designed for using many variable predictors and so for this classifier all musical variables can be used. The random forest package in R even calculates how important each variable is to predicting which compound group the track belongs to. 
+```{r Random Forect Classifier}
+set.seed(777)
+#Load packages needed to build and evaluate the models 
+library(randomForest) 
+library(e1071) 
+
+#The data - We can use our CDS_numerical dataset
+
+#Split the data into a training and test set 
+RF_split = sample(2, nrow(CDS_numerical), replace=TRUE, prob=c(0.7,0.3))
+train_RF = CDS_numerical[RF_split==1,]
+test_RF = CDS_numerical[RF_split==2,]
+
+
+#Cross-validating the model: We're going to cross-validate 10 times to ensure our results are accurate
+#First set trControl to the default settings and then run an evaluation on the train data - testing what the optimal number of mtry will be for our model 
+trControl <- trainControl(method = "cv",
+    number = 10,
+    search = "grid")
+
+trEVALUATE <- train(Drug~., train_RF, method = "rf", metric= "Accuracy", trControl = trainControl(), tuneGrid = NULL)
+#print results
+print(trEVALUATE) # Our evaluation tells us the optimal mtry to use is 2 (accuracy: .83, Kappe = .66) - the model tested 2, 5 and 9 mtry. 
+
+#Search the best MaxNodes 
+store_maxnode <- list()
+tuneGrid <- expand.grid(.mtry = 2)
+for (maxnodes in c(5: 15)) {
+    set.seed(1234)
+    rf_maxnode <- train(Drug~.,
+        data = train_RF,
+        method = "rf",
+        metric = "Accuracy",
+        tuneGrid = tuneGrid,
+        trControl = trControl,
+        importance = TRUE,
+        nodesize = 14,
+        maxnodes = maxnodes,
+        ntree = 300)
+    current_iteration <- toString(maxnodes)
+    store_maxnode[[current_iteration]] <- rf_maxnode
+}
+results_mtry <- resamples(store_maxnode)
+summary(results_mtry) #Most accuracy achieved at 14 Nodes, so 9 Nodes have been used (Accuracy = .81, Kappa - .61)
+
+#Search the best number of ntrees 
+store_maxtrees <- list()
+for (ntree in c(250, 300, 350, 400, 450, 500, 550, 600, 800, 1000, 2000)) {
+    set.seed(589)
+    rf_maxtrees <- train(Drug~.,
+        data = train_RF,
+        method = "rf",
+        metric = "Accuracy",
+        tuneGrid = tuneGrid,
+        trControl = trControl,
+        importance = TRUE,
+        maxnodes = 14,
+        ntree = ntree)
+    key <- toString(ntree)
+    store_maxtrees[[key]] <- rf_maxtrees
+}
+results_tree <- resamples(store_maxtrees)
+summary(results_tree) #Model concluded 350 trees was optimal (Accuracy = .80, Kappa = .60)
+
+
+#Generate the random forest
+Model_RF = randomForest(Drug~., data=train_RF, ntree=350, mtry= 2, proximity=T)
+table(predict(Model_RF), train_RF$Drug)
+
+Model_RF #  Estimate of error rate = 16.63% - pretty good!
+
+plot(Model_RF) #This plot shows us the mean squared error for each drug group - the model doesn't seem to improve much after 150 trees 
+
+importance(Model_RF)#Here the most important variables are acousticness, energy, loudness, speechiness
+varImpPlot(Model_RF) #Plot of the variables importance 
+
+
+#Let's test how good our model is: 
+Pred_RF = predict(Model_RF, newdata=test_RF)
+table(Pred_RF, test_RF$Drug)
+confusionMatrix(Pred_RF, test_RF$Drug) #This has all the metrics you need to predict!! 
+
+
+#Plot to see whether whether the classification is correct (if + it is correct)
+plot(margin(Model_RF, test_RF$Drug)) # we have an upwards slope which looks good 
+
+#Calculating the AUC value and ROC curve - this gives us an indication of how good our model is 
+#AUC Calculation 
+library(pROC)
+library(ROCR)
+rf_p<- predict(Model_RF, type="prob")[,2]
+rf_pr <- prediction(rf_p, train_RF$Drug)
+r_auc <- performance(rf_pr, measure = "auc")@y.values[[1]] 
+r_auc    #0.91 recall that this should be as close to 1 as possible, so .91 is a great outcome! 
+
+```
+Conclusions: The random forest classifier, which can manage all the variable predictors, improved on the accuracy of the Binomial Logistic Regression model by around 3%. This model is predicting at a rate of 84% which is 34% above the rate of chance (50%) and even more promising for our investigation. Further, the random forest model revealed that the variables most useful to predicting were in fact not the ones which showed the greatest variance in the data visualisation boxplots, but included speechiness and loudness. This is a reminder of how machine learning approaches such as classification can improve on exploratory data analysis and reveal trends not so readily seen by the eye. 
+

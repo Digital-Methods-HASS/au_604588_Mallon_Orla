@@ -1,0 +1,200 @@
+---
+title: "Assingment 5"
+author: "Orla Mallon"
+date: "19/10/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+
+#Install Packages 
+library(tidyverse)
+library(ggplot2)
+library(gganimate)
+library(gapminder)
+pacman::p_load("scales")
+```
+
+```{r}
+unique(gapminder$year)
+head(gapminder)
+```
+The dataset contains information on each country in the sampled year, its continent, life expectancy, population, and GDP per capita.
+
+Let's plot all the countries in 1952.
+```{r 1957 plot}
+theme_set(theme_bw())  # set theme to white background for better visibility
+ggplot(subset(gapminder, year == 1952), aes(gdpPercap, lifeExp, size = pop)) +
+  geom_point() +
+  scale_x_log10() 
+```
+We see an interesting spread with an outlier to the right. Answer the following questions, please:
+
+Q1. Why does it make sense to have a log10 scale on x axis?
+Answer: Applying a log10 scale to the xaxis means that for every 1 value of y, the x-axis will increase by a factor of 10. It is a useful transformation to use when there are huge differenes between x-values as it compresses the scale and makes your graph more comprehensible. For example, Log scales help to handle skewed data, when a few very large values skew the graph out of perspective (such as the very large gdp of the US compared to some of the African nations). It is a good method to use for this data as it allows for the huge differenecs between gdp where many values fall around the middle of the scale but some are very low and some are very high, creating outliers on both ends. Logorithmacally transforming these pulls these into a better scale. 
+
+Q2. What country is the richest in 1952 (far right on x axis)? 
+For this question we could add country names into the above plot, by addin the following line of code to our plot chunck "+ geom_text(aes(label=country))". As there are many points however, this will clutter the plot and make it hard to see any of the trends. Thus we can instead filter the data into descdending order and see which country has the largest GDP: We'll filter by firstly the year 1952 and then arrange it by descending gdp
+```{r 1957 filter}
+gapminder %>% 
+  filter(year == 1952) %>%
+  arrange(desc(gdpPercap))
+```
+Answer: We see that Kuwait had the largest gdp per capita in 1952, followed by Switzerland and then the US. 
+
+You can generate a similar plot for 2007 and compare the differences
+```{r 2007 plot}
+ggplot(subset(gapminder, year == 2007), aes(gdpPercap, lifeExp, size = pop)) +
+  geom_point() +
+  scale_x_log10() 
+```
+The black bubbles are a bit hard to read, the comparison would be easier with a bit more visual differentiation.
+
+Q3. Can you differentiate the continents by color and fix the axis labels?
+Colour = We can add colour by continent by simply defining colour in the aesthetics and equaling it to continent, thereby telling R that you want to add colour and these should depend on the continent. R will then search the dataset and every time if finds a unique entry to continent, it will assign a colour to it and all values that also share that continent value. See color = continent in code) 
+
+Axis Labels = These can be added by adding a new line into your graph code for +labs() and using speech marks to define what the x and y should be labled.
+
+```{r Adding aes}
+ggplot(subset(gapminder, year == 2007), aes(gdpPercap, lifeExp, size = pop,color=continent)) +
+  geom_point() +
+  scale_color_viridis_d() +
+  scale_size(range = c(2, 12))+
+  scale_x_log10() +
+  labs(title="2007",
+        x ="GDP per capita", y = "Life Expectancy")
+
+```
+
+Q4. What are the five richest countries in the world in 2007?
+Here again we'll apply a filter, firstly by year and then a descending function to filter only the top 5 countries, defined by stating you only want 5 values 
+
+```{r Richest countries 2007}
+
+gapminder %>% 
+  filter(year == 2007) %>%
+  arrange(desc(gdpPercap)) %>% 
+  head(5)
+
+#This could be visalised in a graph by first creating a dataset with the above filter to figure out the gdp thresehold and then subset to filter only values above 40,000
+richest_countries <- gapminder %>% subset( year == 2007) %>% 
+  subset(gdpPercap > 40000)
+
+ggplot(richest_countries, aes(gdpPercap, lifeExp, size = pop,color=continent)) +
+  geom_point() +
+  scale_color_viridis_d() +
+  scale_size(range = c(2, 12))+
+  scale_x_log10() +
+  labs(title="2007",
+        x ="GDP per capita", y = "Life Expectancy")
+
+
+```
+The 5 richest countries in 2007 in descending order are Norway (49357), Kuwait (47306), Singapore (47143), US (42951) and Ireland (40676)
+
+##  Make it move!
+
+The comparison would be easier if we had the two graphs together, animated. We have a lovely tool in R to do this: the `gganimate` package. And there are two ways of animating the gapminder ggplot.
+
+### Option 1: Animate using transition_states() 
+
+The first step is to create the object-to-be-animated
+```{r anim1 start}
+anim <- ggplot(gapminder, aes(gdpPercap, lifeExp, size = pop)) +
+  geom_point() +
+  scale_x_log10()  # convert x to log scale
+anim
+```
+
+This plot collates all the points across time. The next step is to split it into years and animate it. This may take some time, depending on the processing power of your computer (and other things you are asking it to do). Beware that the animation might appear in the 'Viewer' pane, not in this rmd preview. You need to knit the document to get the viz inside an html file.
+
+```{r anim1 transition}
+anim + transition_states(year, 
+                      transition_length = 1,
+                      state_length = 1)
+```
+Notice how the animation moves jerkily, 'jumping' from one year to the next 12 times in total. This is a bit clunky, which is why it's good we have another option. 
+
+
+### Option 2 Animate using transition_time()
+This option smoothes the transition between different 'frames', because it interpolates and adds transitional years where there are gaps in the timeseries data.
+
+```{r anim2}
+anim2 <- ggplot(gapminder, aes(gdpPercap, lifeExp, size = pop)) +
+  geom_point() +
+  scale_x_log10() + # convert x to log scale
+  transition_time(year)
+anim2
+```
+
+The much smoother movement in Option 2 will be much more noticeable if you add a title to the chart, that will page through the years corresponding to each frame.
+
+Q5 Can you add a title to one or both of the animations above that will change 
+ in sync with the animation? [hint: search labeling for transition_states() and transition_time() functions respectively]
+```{r anim3}
+
+anim3 <- ggplot(gapminder, aes(gdpPercap, lifeExp, size = pop, color = continent)) +
+  geom_point() +
+  scale_x_log10() +  # convert x to log scale
+  labs(title = "Year: {frame_time}", #lab that changes every time step 
+       x = 'GDP per capita',
+       y = 'Life expectancy',
+       size = 'Population') +
+  transition_time(year) 
+anim3
+
+```
+
+
+Q6 Can you made the axes' labels and units more readable? Consider expanding the abreviated lables as well as the scientific notation in the legend and x axis to whole numbers.[hint:search disabling scientific notation]
+
+```{r labs}
+anim2
+library(ggplot2,scales)
+
+#making the axes and labels comprehensible 
+anim2 + 
+  scale_size_continuous(label = scales::comma) + #Scales the population size (full numbers)
+  scale_x_log10(labels = scales::comma) #Scales the GDP per capita values on the x-axis to full numbers
+
+```
+
+
+Q7 Come up with a question you want to answer using the gapminder data and write it down. Then, create a data visualisation that answers the question and explain how your visualization answers the question. (Example: you wish to see what was mean life expectancy across the continents in the year you were born versus your parents' birth years). [hint: if you wish to have more data than is in the filtered gapminder, you can load either the `gapminder_unfiltered` dataset and download more at https://www.gapminder.org/data/ ]
+
+Question: Do mothers have less children as time races on, in Europe? How does this compare to the increase in GDP per capita? 
+```{r fertility}
+
+#Import the extra data downloaded from gapminder 
+gapminder2 <- gapminder_unfiltered
+fertility <- read.csv("children_per_woman_total_fertility.csv")
+
+
+#Combine the Year columns into one column for years using "melt" 
+library(reshape2)
+fertility_transformed <- melt(fertility, measure.vars = 2:302,variable.name="year", value.name="fertility")
+#subtracting X from the year column
+fertility_transformed$year <- substr(fertility_transformed[["year"]], 2, 5)
+
+#merge the data frames into one, connected by year and country and then separate into only European data 
+merged_fertility <- merge(gapminder2, fertility_transformed, by = c("country", "year"))
+eur <- subset(merged_fertility, continent=="Europe")
+
+anim_fertility <-  ggplot(eur, aes(gdpPercap, fertility, size = pop, color = country)) +
+  geom_point() +
+  geom_text(aes(label=country))+
+  scale_size_continuous(label=scales::comma) +
+  scale_x_log10(labels = scales::comma) +  # convert x to log scale to allow better comparison
+  scale_y_log10(labels = scales::comma) +  
+  labs(title = "Number of Children per Woman in Europe over time",
+       x = 'GDP per capita',
+       y = 'Births per Woman',
+       size = 'Population',
+       caption = 'Data source: www.gapminder.org/data/')+
+  transition_time(year) +
+  labs(subtitle = "Year: {frame_time}")
+anim_fertility
+
+```

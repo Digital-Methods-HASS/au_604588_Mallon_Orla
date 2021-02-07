@@ -1,0 +1,217 @@
+---
+title: "SA_Assingment1"
+author: "Orla Mallon"
+date: "07/02/2021"
+output: html_document
+---
+This script contains the code for Assignment 1 of the Spatial Analytics class, Spring 2021. 
+
+Here we use the leaflet package to create an interactive map of historical ruins found in the Blue Mountains. 
+
+Setup: 
+```{r Setup}
+#Set working directory 
+setwd("~/Desktop/Cultural Data Science/")
+getwd()
+
+
+#Install necessary packages: 
+library(leaflet)
+library(htmltools)
+library(htmlwidgets)
+library(tidyverse)
+library(googlesheets4)
+
+```
+
+
+We're going with a more simplified map than the esri layers to keep our view nice and simple with 3 different views to scroll between - The Esri layers were tested and deemed to be too messy 
+
+The Setup: 
+```{r}
+
+#Create your Base map using the coordinates of the area of interest 
+BM_Map <- leaflet() %>% 
+  setView(150.2566589, -33.7099316, zoom = 12) %>%
+  addTiles()  # checking I am in the right area
+
+
+#Now let's add some layers on top - this will allow more interaction with different styles of map 
+BM_Map <- BM_Map %>% 
+  addProviderTiles("Esri.WorldPhysical", group = "Physical") %>% 
+  addProviderTiles("Esri.WorldImagery", group = "Aerial") %>% 
+  addProviderTiles("MtbMap", group = "Geo") %>% 
+
+addLayersControl(
+  baseGroups = c("Geo","Aerial", "Physical"),
+  options = layersControlOptions(collapsed = T))
+
+##Feeding in the Information ##
+
+#We need to feed in our markers from the csv file and clean these up 
+BM_markers <- read.csv("RCFeature.csv")
+glimpse(BM_markers)
+
+#Look for NAs which will need removed 
+sum(is.na(BM_markers$Latitude)) #There is 1 NA
+sum(is.na(BM_markers$Longitude))  #There is 1 NA
+
+BM_markers <- BM_markers %>% filter(!is.na(Longitude))
+BM_markers <- BM_markers %>% filter(!is.na(Latitude)) #Now we have 256 observations
+
+
+#Setting up the Icons 
+#Later we're going to want to add some markers, so we'll add some icons for these
+#We want to have icons which are coloured to indicate how accurate the location is. This will be green if the accuracy is below 1, and pink if the accracy is above 1 (range= 0.6 - 16)
+HistIcons <- icons(
+  iconUrl = ifelse(BM_markers$Accuracy <= 1.0,
+    "https://icons.iconarchive.com/icons/icons-land/vista-map-markers/128/Map-Marker-Marker-Outside-Chartreuse-icon.png",
+    "https://icons.iconarchive.com/icons/icons-land/vista-map-markers/128/Map-Marker-Marker-Outside-Pink-icon.png"
+  ),
+  iconWidth = 24, iconHeight = 24,
+  iconAnchorX = 24, iconAnchorY = 24
+)
+
+
+```
+
+Now lets make the map interactive: 
+```{r}
+##Making the Map Interactive## 
+
+#First, we'll add our markers with popup descriptions 
+BM_Map <- BM_Map %>% 
+  addMarkers(lng = BM_markers$Longitude,
+             lat = BM_markers$Latitude, 
+             label = paste("Feature ID:", BM_markers$FeatureID,
+                           "  Feature Type:", BM_markers$FeatureType,
+                           "  Description:", BM_markers$Description),
+             labelOptions = labelOptions(noHide = F, style = list("font-family" = "serif", 
+                                                                  "font-size" = "13px")), 
+             icon = HistIcons 
+      )
+BM_Map
+
+#We'll also add some circle cluster markers based on Longitude and Latidude info 
+BM_Map <- BM_Map %>% addCircleMarkers(lng = BM_markers$Longitude,
+                                      lat = BM_markers$Latitude, 
+                                      clusterOptions = TRUE, 
+                                      #We're going to change to size of our markers
+                                      radius = BM_markers$Accuracy * 20)
+
+
+#Next we'll add a minimap for more interactivity on the map 
+BM_Map <- BM_Map %>% addMiniMap(position = "bottomright")
+BM_Map
+
+#Add a measure control to the map
+BM_Map <- BM_Map %>% addMeasure(position = "bottomleft")
+BM_Map
+
+#Some Notes: 
+#Clustering doesn't seem to be such a good option for this map as the clustering options stuggle to make good clusters at any level of zoom closer than 13. When we zoom out lots and add the cluterOptions into our markers the spider map can spread points across for us. This does allow for easier scolling through the ruins, but they are so closely packed together that we don't get a good idea of the location with clustering. This option would be better suited to a large map with ruins spread across a bigger geographical area. 
+
+#Now lets export our map 
+
+#Save
+saveWidget(BM_Map, "BM_Map.html", selfcontained = TRUE)
+
+
+```
+
+
+
+
+Testing the esri background layers: 
+```{r}
+# #Setting the base location 
+# Blue_Mountains <- leaflet() %>% 
+#   setView(150.2566589, -33.7099316, zoom = 11) %>%
+#   addTiles()  # checking I am in the right area
+# 
+# #Add the choice of an esri backgorund - this allows us to view the map in a number of different views and mapstyles 
+# esri <- grep("^Esri", providers, value = TRUE)
+# 
+# for (provider in esri) {
+#   Blue_Mountains <- Blue_Mountains %>% addProviderTiles(provider, group = provider)
+# }
+# 
+# Blue_Mountains_Map <- Blue_Mountains %>%
+#   addLayersControl(baseGroups = names(esri),
+#                    options = layersControlOptions(collapsed = FALSE)) %>%
+#   addMiniMap(tiles = esri[[1]], toggleDisplay = TRUE,
+#              position = "bottomright") %>%
+#   addMeasure(
+#     position = "bottomleft",
+#     primaryLengthUnit = "meters",
+#     primaryAreaUnit = "sqmeters",
+#     activeColor = "#3D535D",
+#     completedColor = "#7D4479") %>% 
+#   htmlwidgets::onRender("
+#                         function(el, x) {
+#                         var myMap = this;
+#                         myMap.on('baselayerchange',
+#                         function (e) {
+#                         myMap.minimap.changeLayer(L.tileLayer.provider(e.name));
+#                         })
+#                         }") %>% 
+# addControl("", position = "topright")
+# Blue_Mountains_Map
+# 
+#  
+# 
+# Blue_Mountains_Map <- Blue_Mountains_Map %>% 
+#   addTiles() %>% 
+#   addMarkers(lng = BM_markers$Longitude,
+#              lat = BM_markers$Latitude, 
+#              label = paste("Feature ID:", BM_markers$FeatureID,
+#                            "  Feature Type:", BM_markers$FeatureType,
+#                            "  Description:", BM_markers$Description),
+#              labelOptions = labelOptions(noHide = F, style = list("font-family" = "serif", 
+#                                                                   "font-size" = "13px"))
+#       )
+# Blue_Mountains_Map
+# 
+# #Add a minimap which will allow the user to extend their interactivity with the map 
+# Blue_Mountains_Map <- Blue_Mountains_Map %>% addMiniMap(position = "topleft")
+# Blue_Mountains_Map
+# 
+# #Add a measure control to the map
+# Blue_Mountains_Map <- Blue_Mountains_Map %>% addMeasure(position = "bottomleft")
+# Blue_Mountains_Map
+# 
+# #Make the markers different icons based on which material they are made of: 
+# #This looked too messy so we're going with colours instead! 
+# 
+# 
+# #Make the markers different colours, depending on how accurate the location is 
+# getColor <- function(Blue_Mountains_Map) {
+#   sapply(BM_markers$Accuracy, function(Accuracy) {
+#   if(Accuracy <= 1.0) {
+#     "green"
+#   } else if(Accuracy <= 5.0) {
+#     "orange"
+#   } else {
+#     "red"
+#   } })
+# }
+
+
+# icons <- awesomeIcons(
+#   icon = 'ios-close',
+#   iconColor = 'darkgrey',
+#   library = 'ion',
+#   markerColor = getColor(Blue_Mountains_Map)
+# )
+# 
+# Blue_Mountails_Map <- Blue_Mountains_Map %>% addAwesomeMarkers(BM_markers$Longitude, BM_markers$Latitude, icon = icons)
+# Blue_Mountains_Map
+# 
+# 
+# #Save
+# saveWidget(Blue_Mountails_Map, "Blue_Mountains_Map.html", selfcontained = TRUE)
+
+```
+
+
+
